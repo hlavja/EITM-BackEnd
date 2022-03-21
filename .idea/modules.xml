@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/Login/Login.iml" filepath="$PROJECT_DIR$/Login/Login.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Register/Register.iml" filepath="$PROJECT_DIR$/Register/Register.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../FrontEnd/faceid-app/faceid-app.iml" filepath="$PROJECT_DIR$/../FrontEnd/faceid-app/faceid-app.iml" />
+    </modules>
+  </component>
+</project>
