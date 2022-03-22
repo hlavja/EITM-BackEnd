@@ -19,7 +19,9 @@ import software.amazon.awssdk.services.rekognition.RekognitionClient;
 import software.amazon.awssdk.services.rekognition.model.*;
 
 import java.nio.ByteBuffer;
+import java.time.ZonedDateTime;
 import java.util.Base64;
+import java.util.Map;
 
 
 /**
@@ -34,9 +36,6 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
     static APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
     static UserLoginDTO loginUser;
     static ObjectMapper mapper = new ObjectMapper();
-    static RekognitionClient rekognitionClient = RekognitionClient.builder()
-            .region(Region.EU_CENTRAL_1)
-            .build();
 
     @Override
     public APIGatewayProxyResponseEvent handleRequest(final APIGatewayProxyRequestEvent input, final Context context) {
@@ -48,14 +47,38 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
         }
         boolean approved = compareFaces(user);
         if (approved) {
-            return response.withStatusCode(HttpStatus.SC_OK).withBody(objectAsJson(loginUser));
+            updateUser(user);
+            dynamoDBMapper.save(user);
+            return response.withStatusCode(HttpStatus.SC_OK).withBody(objectAsJson(user));
         } else {
             return response.withStatusCode(HttpStatus.SC_UNAUTHORIZED).withBody(objectAsJson(loginUser));
         }
     }
 
+    private void updateUser(User user) {
+        user.setLoggedIn(true);
+        if (!user.getLogins().isEmpty()) {
+            int loginNumber = 1;
+            for(Map.Entry<String, String> entry : user.getLogins().entrySet()) {
+                String key = entry.getKey();
+                if (key.contains("login")) {
+                    int number = Integer.parseInt(key.replace("login", ""));
+                    if (number > loginNumber) {
+                        loginNumber = number;
+                    }
+                }
+            }
+            loginNumber = loginNumber + 1;
+            user.addLogin("login" + loginNumber, ZonedDateTime.now().toString());
+        } else {
+            user.addLogin("login1", ZonedDateTime.now().toString());
+        }
+    }
+
     private boolean compareFaces(User targetUser) {
         try {
+            RekognitionClient rekognitionClient = RekognitionClient.builder().region(Region.EU_CENTRAL_1).build();
+
             Image souImage = Image.builder()
                     .bytes(SdkBytes.fromByteBuffer(ByteBuffer.wrap(Base64.getDecoder().decode(loginUser.getImage()))))
                     .build();
@@ -69,6 +92,7 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
                     .targetImage(tarImage)
                     .similarityThreshold(70F)
                     .build();
+
             // Compare the two images.
             CompareFacesResponse compareFacesResult = rekognitionClient.compareFaces(facesRequest);
             rekognitionClient.close();

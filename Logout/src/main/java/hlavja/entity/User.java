@@ -70,7 +70,7 @@ public class User {
         this.loggedIn = loggedIn;
     }
 
-    public void addLogin(String key, String value) {
+    public void addLogout(String key, String value) {
         this.logins.putIfAbsent(key, value);
     }
 }
