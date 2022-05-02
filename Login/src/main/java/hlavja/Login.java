@@ -1,5 +1,6 @@
 package hlavja;
 
+import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBScanExpression;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
@@ -21,6 +22,7 @@ import software.amazon.awssdk.services.rekognition.model.*;
 import java.nio.ByteBuffer;
 import java.time.ZonedDateTime;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 
@@ -41,12 +43,16 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
     public APIGatewayProxyResponseEvent handleRequest(final APIGatewayProxyRequestEvent input, final Context context) {
         logger = context.getLogger();
         loginUser = jsonAsObject(input.getBody(), UserLoginDTO.class);
-        User user = dynamoDBMapper.load(User.class, loginUser.getEmail());
-        if (loginUser.getEmail() != null && user == null) {
+        //User user = dynamoDBMapper.load(User.class, loginUser.getEmail());
+        if (loginUser.getImage() == null || loginUser.getImage().isBlank()) {
             return response.withStatusCode(HttpStatus.SC_NOT_FOUND);
         }
-        boolean approved = compareFaces(user);
-        if (approved) {
+        //logger.log("Logging in user " + user.getEmail());
+        List<User> userList = dynamoDBMapper.scan(User.class, new DynamoDBScanExpression());
+        userList.forEach(user -> logger.log("Found: " + user.getEmail()));
+        User user = compareFaces(userList);
+        if (user != null) {
+            logger.log("Logging in as: " + user.getEmail());
             updateUser(user);
             dynamoDBMapper.save(user);
             return response.withStatusCode(HttpStatus.SC_OK).withBody(objectAsJson(user));
@@ -57,7 +63,7 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
 
     private void updateUser(User user) {
         user.setLoggedIn(true);
-        if (!user.getLogins().isEmpty()) {
+        if (user.getLogins() != null && !user.getLogins().isEmpty()) {
             int loginNumber = 1;
             for(Map.Entry<String, String> entry : user.getLogins().entrySet()) {
                 String key = entry.getKey();
@@ -68,6 +74,10 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
                     }
                 }
             }
+            String logout = user.getLogins().get("logout"+loginNumber);
+            if (logout == null) {
+                user.addLogin("logout" + loginNumber, ZonedDateTime.now().minusHours(1).toString());
+            }
             loginNumber = loginNumber + 1;
             user.addLogin("login" + loginNumber, ZonedDateTime.now().toString());
         } else {
@@ -75,31 +85,36 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
         }
     }
 
-    private boolean compareFaces(User targetUser) {
+    private User compareFaces(List<User> usersList) {
         try {
-            RekognitionClient rekognitionClient = RekognitionClient.builder().region(Region.EU_CENTRAL_1).build();
+            for (User user : usersList) {
+                RekognitionClient rekognitionClient = RekognitionClient.builder().region(Region.EU_CENTRAL_1).build();
 
-            Image souImage = Image.builder()
-                    .bytes(SdkBytes.fromByteBuffer(ByteBuffer.wrap(Base64.getDecoder().decode(loginUser.getImage()))))
-                    .build();
+                Image souImage = Image.builder()
+                        .bytes(SdkBytes.fromByteBuffer(ByteBuffer.wrap(Base64.getDecoder().decode(loginUser.getImage()))))
+                        .build();
 
-            Image tarImage = Image.builder()
-                    .bytes(SdkBytes.fromByteBuffer(ByteBuffer.wrap(Base64.getDecoder().decode(targetUser.getImage()))))
-                    .build();
+                Image tarImage = Image.builder()
+                        .bytes(SdkBytes.fromByteBuffer(ByteBuffer.wrap(Base64.getDecoder().decode(user.getImage()))))
+                        .build();
 
-            CompareFacesRequest facesRequest = CompareFacesRequest.builder()
-                    .sourceImage(souImage)
-                    .targetImage(tarImage)
-                    .similarityThreshold(70F)
-                    .build();
+                CompareFacesRequest facesRequest = CompareFacesRequest.builder()
+                        .sourceImage(souImage)
+                        .targetImage(tarImage)
+                        .similarityThreshold(70F)
+                        .build();
 
-            // Compare the two images.
-            CompareFacesResponse compareFacesResult = rekognitionClient.compareFaces(facesRequest);
-            rekognitionClient.close();
-            return compareFacesResult.faceMatches().size() > 0;
+                // Compare the two images.
+                CompareFacesResponse compareFacesResult = rekognitionClient.compareFaces(facesRequest);
+                rekognitionClient.close();
+                if (compareFacesResult.faceMatches().size() > 0) {
+                    return user;
+                }
+            }
+            return null;
         } catch(RekognitionException e) {
             logger.log(e.toString());
-            return false;
+            return null;
         }
     }
 
