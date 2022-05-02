@@ -57,7 +57,7 @@ public class Login implements RequestHandler<APIGatewayProxyRequestEvent, APIGat
             dynamoDBMapper.save(user);
             return response.withStatusCode(HttpStatus.SC_OK).withBody(objectAsJson(user));
         } else {
-            return response.withStatusCode(HttpStatus.SC_UNAUTHORIZED).withBody(objectAsJson(loginUser));
+            return response.withStatusCode(HttpStatus.SC_UNAUTHORIZED).withBody("User not found!");
         }
     }
 
